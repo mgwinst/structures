@@ -1,7 +1,7 @@
-#include <initializer_list>
+#pragma once
+
 #include <algorithm>
-#include <utility>
-#include <concepts>
+#include <type_traits>
 
 namespace lib {
 
