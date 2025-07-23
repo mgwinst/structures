@@ -26,7 +26,7 @@ struct array {
     constexpr const T* cbegin() const noexcept { return data_; }
     constexpr const T* cend() const noexcept { return data_ + size; }
 
-    constexpr std::size_t size() const noexcept { return size; }
+    constexpr std::size_t get_size() const noexcept { return size; }
     constexpr bool empty() const noexcept { return size == 0; }
     
 
