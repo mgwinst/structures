@@ -16,8 +16,11 @@ namespace lib
     class spsc_queue
     {
     public:
-        spsc_queue(std::size_t capacity) : capacity_{ capacity }
+        spsc_queue(std::size_t capacity)
         {
+            if (capacity <= 0 || ((capacity & (capacity - 1)) != 0)) {
+                throw std::invalid_argument("queue capacity must be power of 2");
+            }
             data_ = new std::byte[capacity];
         }
 
@@ -31,57 +34,62 @@ namespace lib
         spsc_queue(spsc_queue&&) = delete;
         spsc_queue& operator=(spsc_queue&&) = delete;
 
-        std::size_t write(std::span<std::byte> buffer)
+        auto write(std::span<std::byte> buffer) -> std::size_t
         {
             std::size_t write_pos = write_counter_.load(std::memory_order_acquire);
             std::size_t read_pos = read_counter_.load(std::memory_order_acquire);
-            
-            if (write_pos - read_pos + buffer.size() > capacity_)
+
+            std::size_t bytes_in_queue = write_pos - read_pos;
+
+            if (bytes_in_queue == capacity_)
                 return 0;
-            
+
+            std::size_t bytes_to_write = std::min(buffer.size(), (capacity_ - bytes_in_queue));
+
             std::size_t index = write_pos % capacity_;
             std::size_t bytes_to_end = capacity_ - index;
-            if (buffer.size() < bytes_to_end) {
-                std::memcpy(data_ + index, buffer.data(), buffer.size());
+
+            if (bytes_to_write <= bytes_to_end) {
+                std::memcpy(data_ + index, buffer.data(), bytes_to_write);
             } else {
                 std::memcpy(data_ + index, buffer.data(), bytes_to_end);
-                std::memcpy(data_, buffer.data() + bytes_to_end, buffer.size() - bytes_to_end);
+                std::memcpy(data_, buffer.data() + bytes_to_end, bytes_to_write - bytes_to_end);
             }
 
-            write_counter_.store(write_pos + buffer.size(), std::memory_order_release);
+            write_counter_.store(write_pos + bytes_to_write, std::memory_order_release);
 
-            return buffer.size();
+            return bytes_to_write;
         }
         
-        int64_t read(std::span<std::byte> buffer)
+        auto read(std::span<std::byte> buffer) -> std::size_t
         {
             std::size_t write_pos = write_counter_.load(std::memory_order_acquire);
             std::size_t read_pos = read_counter_.load(std::memory_order_acquire);
 
-            std::size_t readable_bytes = write_pos - read_pos;
+            std::size_t bytes_in_queue = write_pos - read_pos;
 
-            if (readable_bytes == 0)
-                return false;
+            if (bytes_in_queue == 0)
+                return 0;
 
-            std::size_t bytes_to_read = std::min(readable_bytes, buffer.size());
-            std::size_t index = read_pos;
+            std::size_t index = read_pos % capacity_;
+            std::size_t bytes_to_read = std::min(buffer.size(), bytes_in_queue);
             std::size_t bytes_to_end = capacity_ - index;
 
-            if (bytes_to_read <= bytes_to_end) {
+            if (bytes_to_read < bytes_to_end) {
                 std::memcpy(buffer.data(), data_ + index, bytes_to_read);
             } else {
                 std::memcpy(buffer.data(), data_ + index, bytes_to_end);
                 std::memcpy(buffer.data() + bytes_to_end, data_, bytes_to_read - bytes_to_end);
             }
-            
-            read_counter_.store(read_counter_ + bytes_to_read, std::memory_order_release);
+
+            read_counter_.store(read_pos + bytes_to_read, std::memory_order_release);
 
             return bytes_to_read;
         }
 
         private:
-            alignas(cache_line_size) std::atomic<int> read_counter_;
-            alignas(cache_line_size) std::atomic<int> write_counter_;
+            alignas(cache_line_size) std::atomic<std::size_t> read_counter_{ 0 };
+            alignas(cache_line_size) std::atomic<std::size_t> write_counter_{ 0 };
             alignas(cache_line_size) std::byte* data_;
             std::size_t capacity_;
     };
