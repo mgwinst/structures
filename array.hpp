@@ -66,6 +66,14 @@ namespace lib {
         );
     }
 
+    template <typename T, std::size_t N>
+    auto operator==(const array<T, N>& lhs, const array<T, N>& rhs) {
+        return std::lexicographical_compare(
+            lhs.data(), lhs.data() + N,
+            rhs.data(), rhs.data() + N
+        );
+    }
+
 }
 
 
